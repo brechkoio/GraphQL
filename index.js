@@ -2,18 +2,39 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { graphqlHTTP } = require('express-graphql');
 const { buildSchema } = require('graphql');
+const mongoose = require('mongoose');
+
+const Event = require('./models/event');
 
 const app = express();
+
+const events = [];
+
 app.use(bodyParser.json());
 
 app.use('/graphql', graphqlHTTP({
     schema: buildSchema(`
+        type Event {
+            _id: ID!
+            title: String
+            description: String!
+            price: Float!
+            date: String!
+        }
+
+        input EventInput {
+            title: String
+            description: String!
+            price: Float!
+            date: String!
+        }
+
         type RootQuery {
-            events: [String!]!
+            events: [Event!]!
         }
 
         type RootMutation {
-            createEvent(name: String): String
+            createEvent(eventInput: EventInput): Event
         }
 
         schema {
@@ -23,16 +44,45 @@ app.use('/graphql', graphqlHTTP({
     `),
     rootValue: {
         events: () => {
-            return ['Romantic Cooking', 'Sailing', 'All-Night Coding']
+            return Event
+                .find()
+                .then( events => {
+                    return events.map(event => {
+                        return { ...event._doc }
+                    })
+                }) 
+                .catch((err) => {
+                    console.log(err);
+                    throw err;
+                });
         },
         createEvent: (args) => {
-            const eventName = args.name;
-            return eventName;
+            const event = new Event({
+                title: args.eventInput.title,
+                description: args.eventInput.description,
+                price: +args.eventInput.price,
+                date: new Date(args.eventInput.date)
+            });
+            return event
+                .save()
+                .then(result => {
+                    console.log(result);
+                    return { ...result._doc };
+                })
+                .catch(err => {
+                    console.log(err);
+                    throw err;
+                });
+            return event;
         }
     },
     graphiql: true
 }));
-
-app.listen(3001, () => {
-    console.log(`Server started on port: 3001`);
-});
+mongoose.set('strictQuery', false);
+mongoose.connect(`mongodb+srv://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@graphqlcluster.bv0pokr.mongodb.net/?retryWrites=true&w=majority`)
+    .then(() => {
+        app.listen(3001);
+    })
+    .catch(err => {
+        console.log(err);
+    });
